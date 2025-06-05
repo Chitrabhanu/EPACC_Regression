@@ -54,7 +54,12 @@ for file_num in range(NUM_FILES):
 
         # Create model instance using selected architecture
         model = model_catalog[SELECTED_MODEL]()
-        model.apply(weights_init)
+        # Load pretrained weights if specified, else initialize from scratch
+        if PRETRAINED:
+            model.load_state_dict(torch.load(PRETRAINED_WEIGHTS_PATH))
+            print(f"Loaded pretrained weights from {PRETRAINED_WEIGHTS_PATH}")
+        else:
+            model.apply(weights_init)
 
         # Perform training and validation for this fold
         train_one_fold(model, train_ds, val_ds, fold_num + 1, file_num + 1)

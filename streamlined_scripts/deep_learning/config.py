@@ -9,6 +9,8 @@ TEST_SPLIT_PATH = os.path.join(DATA_BASE_FOLDER, 'time_series_splits/test/')
 FOLD_PIGS_FILE = os.path.join(DATA_BASE_FOLDER, 'fold_metadata/fold_pigs_SV.csv')
 LOGGING_PROGRESS_PATH = 'Results/EPACC/Regressor/'
 MODEL_PATH = 'Models/EPACC/Regressor_bl_mae/'
+PRETRAINED = True
+PRETRAINED_WEIGHTS_PATH = "pretrainer_state_dict.pth"
 PLOTS_PATH = os.path.join(LOGGING_PROGRESS_PATH, 'plots/pretrain/abp_cvp_3sol/1DCNN_3_layer_SE_BN_reg/')
 
 os.makedirs(PLOTS_PATH, exist_ok=True)
