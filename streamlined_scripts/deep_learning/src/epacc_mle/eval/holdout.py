@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -32,7 +32,8 @@ def predict_wavelets(
         yhat = model(xb).detach().cpu().numpy().astype(float)
 
         y_true_all.extend(yb.numpy().astype(float).tolist())
-        y_pred_all.extend(yhat.tolist())
+        # flatten (handles (B,1) or (B,) cleanly)
+        y_pred_all.extend(np.asarray(yhat).reshape(-1).tolist())
 
         for k, vs in ids.items():
             ids_all.setdefault(k, []).extend(vs)
@@ -58,12 +59,24 @@ def evaluate_holdout_split(
       - (optional) holdout/split_XX_preds_wavelet.csv and split_XX_preds_bolus.csv
     """
     ds = WaveletDataset(cfg, test_df)
-    loader = DataLoader(ds, batch_size=cfg.train.batch_size, shuffle=False, collate_fn=collate_wavelet_batch)
+    loader = DataLoader(
+        ds,
+        batch_size=int(cfg.train.batch_size),
+        shuffle=False,
+        collate_fn=collate_wavelet_batch,
+    )
 
     y_true, y_pred, ids = predict_wavelets(model, loader)
 
-    # IMPORTANT: bolus identity uses ids["pig"] + ids["bolus"] per your original logic
-    pred_df = make_wavelet_pred_df(ids["dataset"], ids["pig"], ids["bolus"], y_true, y_pred)
+    # Bolus identity uses (dataset, pig, bolus=batch)
+    pred_df = make_wavelet_pred_df(
+        ids_dataset=ids["dataset"],
+        ids_pig=ids["pig"],
+        ids_bolus=ids["bolus"],
+        y_true=y_true,
+        y_pred=y_pred,
+        ids_subject=ids.get("subject"),  # optional; helpful for debugging
+    )
     wave_m, bolus_m, bolus_df = compute_wavelet_and_bolus_metrics(pred_df)
 
     metrics = {
