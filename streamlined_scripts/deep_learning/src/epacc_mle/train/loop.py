@@ -34,6 +34,7 @@ def get_device() -> torch.device:
 
 def set_seed(seed: int) -> None:
     import random
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -43,6 +44,12 @@ def set_seed(seed: int) -> None:
 
 @torch.no_grad()
 def predict_full(model: nn.Module, loader: DataLoader) -> Tuple[np.ndarray, np.ndarray, Dict[str, List]]:
+    """
+    Run model over entire loader and collect:
+      - y_true (N,)
+      - y_pred (N,)
+      - ids_all: dict[str, list] with keys returned by collate (dataset/subject/pig/bolus)
+    """
     model.eval()
     dev = next(model.parameters()).device
 
@@ -55,12 +62,35 @@ def predict_full(model: nn.Module, loader: DataLoader) -> Tuple[np.ndarray, np.n
         yhat = model(xb).detach().cpu().numpy().astype(float)
 
         y_true_all.extend(yb.numpy().astype(float).tolist())
-        y_pred_all.extend(yhat.tolist())
+        # yhat shape might be (B,1) -> tolist gives [[...],[...]]
+        # flatten safely:
+        y_pred_all.extend(np.asarray(yhat).reshape(-1).tolist())
 
         for k, vs in ids.items():
             ids_all.setdefault(k, []).extend(vs)
 
     return np.array(y_true_all, dtype=float), np.array(y_pred_all, dtype=float), ids_all
+
+
+def _build_pred_df(ids: Dict[str, List], y_true: np.ndarray, y_pred: np.ndarray) -> pd.DataFrame:
+    """
+    Standardize prediction dataframe construction:
+      - bolus identity uses (dataset, pig, bolus)
+      - subject is optional debugging column (pig_id), NOT used for aggregation
+    """
+    required = {"dataset", "pig", "bolus"}
+    missing = required - set(ids.keys())
+    if missing:
+        raise KeyError(f"Missing required id keys {missing}. Present keys: {sorted(ids.keys())}")
+
+    return make_wavelet_pred_df(
+        ids_dataset=ids["dataset"],
+        ids_pig=ids["pig"],          # IMPORTANT: bolus identity component (cfg.data.key_pig => 'pig')
+        ids_bolus=ids["bolus"],      # batch
+        y_true=y_true,
+        y_pred=y_pred,
+        ids_subject=ids.get("subject"),  # optional: fold/group id (cfg.data.key_subject => 'pig_id')
+    )
 
 
 def train_one_fold(
@@ -73,7 +103,7 @@ def train_one_fold(
     fold_id: int,
 ) -> pd.DataFrame:
     # Make randomness stable per split/fold
-    set_seed(cfg.project.seed + split_id * 100 + fold_id)
+    set_seed(int(cfg.project.seed) + int(split_id) * 100 + int(fold_id))
 
     dev = get_device()
     model = model.to(dev)
@@ -82,13 +112,19 @@ def train_one_fold(
     val_ds = WaveletDataset(cfg, val_df)
 
     train_loader = DataLoader(
-        train_ds, batch_size=cfg.train.batch_size, shuffle=True, collate_fn=collate_wavelet_batch
+        train_ds,
+        batch_size=int(cfg.train.batch_size),
+        shuffle=True,
+        collate_fn=collate_wavelet_batch,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=cfg.train.batch_size, shuffle=False, collate_fn=collate_wavelet_batch
+        val_ds,
+        batch_size=int(cfg.train.batch_size),
+        shuffle=False,
+        collate_fn=collate_wavelet_batch,
     )
 
-    opt = torch.optim.Adam(model.parameters(), lr=cfg.train.learning_rate)
+    opt = torch.optim.Adam(model.parameters(), lr=float(cfg.train.learning_rate))
     criterion = nn.MSELoss(reduction="mean")
 
     best_val_bolus_mae = float("inf")
@@ -96,7 +132,7 @@ def train_one_fold(
 
     rows: List[EpochRow] = []
 
-    for epoch in range(1, cfg.train.epochs + 1):
+    for epoch in range(1, int(cfg.train.epochs) + 1):
         # ---- train ----
         model.train()
         train_losses: List[float] = []
@@ -112,16 +148,19 @@ def train_one_fold(
             train_losses.append(float(loss.item()))
         train_loss = float(np.mean(train_losses)) if train_losses else float("nan")
 
-        # ---- eval train/val (MAE wavelet+bolus) ----
+        # ---- eval train/val (wavelet + bolus metrics) ----
         train_eval_loader = DataLoader(
-            train_ds, batch_size=cfg.train.batch_size, shuffle=False, collate_fn=collate_wavelet_batch
+            train_ds,
+            batch_size=int(cfg.train.batch_size),
+            shuffle=False,
+            collate_fn=collate_wavelet_batch,
         )
         ytr, ptr, idtr = predict_full(model, train_eval_loader)
-        pred_tr_df = make_wavelet_pred_df(idtr["dataset"], idtr["pig"], idtr["bolus"], ytr, ptr)
+        pred_tr_df = _build_pred_df(idtr, ytr, ptr)
         tr_wave_m, tr_bolus_m, _ = compute_wavelet_and_bolus_metrics(pred_tr_df)
 
         yva, pva, idva = predict_full(model, val_loader)
-        pred_va_df = make_wavelet_pred_df(idva["dataset"], idva["pig"], idva["bolus"], yva, pva)
+        pred_va_df = _build_pred_df(idva, yva, pva)
         va_wave_m, va_bolus_m, _ = compute_wavelet_and_bolus_metrics(pred_va_df)
 
         # ---- val loss ----
@@ -146,6 +185,7 @@ def train_one_fold(
         )
         rows.append(row)
 
+        # ---- checkpoint best-by-val-bolus-mae ----
         if row.val_bolus_mae < best_val_bolus_mae:
             best_val_bolus_mae = row.val_bolus_mae
             torch.save(
@@ -160,7 +200,7 @@ def train_one_fold(
                 best_ckpt,
             )
 
-        if epoch == 1 or epoch % cfg.train.print_interval == 0:
+        if epoch == 1 or epoch % int(cfg.train.print_interval) == 0:
             print(
                 f"[split {split_id} fold {fold_id}] epoch {epoch}/{cfg.train.epochs} "
                 f"train_loss={row.train_loss:.4f} val_loss={row.val_loss:.4f} "
@@ -175,14 +215,20 @@ def train_one_fold(
     # curves
     xs = hist["epoch"].tolist()
     save_two_line_curve(
-        xs, hist["train_loss"].tolist(), hist["val_loss"].tolist(),
-        "train_loss", "val_loss",
+        xs,
+        hist["train_loss"].tolist(),
+        hist["val_loss"].tolist(),
+        "train_loss",
+        "val_loss",
         f"Loss split {split_id} fold {fold_id}",
         run_dirs["curves"] / f"split_{split_id:02d}" / f"fold_{fold_id:02d}_loss.png",
     )
     save_two_line_curve(
-        xs, hist["train_bolus_mae"].tolist(), hist["val_bolus_mae"].tolist(),
-        "train_bolus_mae", "val_bolus_mae",
+        xs,
+        hist["train_bolus_mae"].tolist(),
+        hist["val_bolus_mae"].tolist(),
+        "train_bolus_mae",
+        "val_bolus_mae",
         f"Bolus MAE split {split_id} fold {fold_id}",
         run_dirs["curves"] / f"split_{split_id:02d}" / f"fold_{fold_id:02d}_bolus_mae.png",
     )
