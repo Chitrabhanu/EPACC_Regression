@@ -1,0 +1,43 @@
+# Global experiment defaults (edit later as needed)
+project:
+  name: epacc_waveforms
+  seed: 42
+
+data:
+  base_dir: data/EPACC
+  train_dir: time_series_splits/train
+  test_dir: time_series_splits/test
+  fold_pigs_csv: fold_metadata/fold_pigs_SV.csv
+
+  # keys/columns
+  key_dataset: dataset
+  key_pig: pig
+  key_bolus: batch
+  target: label
+
+  # wavelet features
+  seq_len: 224
+  feature_prefix: bit_
+
+  # outlier filtering (optional)
+  outlier_filter:
+    enabled: true
+    method: zscore_global
+    z: 3.0
+    # if you later want train-only thresholds:
+    # method: zscore_train
+
+experiment:
+  n_splits: 26
+  n_folds: 5
+
+train:
+  epochs: 150
+  batch_size: 16
+  learning_rate: 0.0005
+  print_interval: 25
+
+model:
+  name: cnn1d_sebn_reg
+  pretrained: false
+  pretrained_weights_path: ""
