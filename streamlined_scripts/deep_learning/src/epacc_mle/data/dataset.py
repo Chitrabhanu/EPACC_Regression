@@ -69,7 +69,7 @@ class WaveletDataset(Dataset):
         x = torch.from_numpy(self.X[idx]).unsqueeze(0)  # (1, seq_len)
         y = torch.tensor(self.y[idx], dtype=torch.float32)
 
-            ids: Dict[str, str] = {
+        ids: Dict[str, str] = {
             "dataset": self.ids_dataset[idx],
             "pig_id": self.ids_pig[idx],     # for fold splitting
             "pig": self.ids_pig_raw[idx],    # for bolus identity/aggregation
