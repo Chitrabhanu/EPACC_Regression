@@ -10,16 +10,23 @@ from epacc_mle.paths import ensure_run_dirs, make_run_id, save_resolved_config
 
 
 def main() -> None:
+    # Toggle modes:
+    # - False: quick dev sanity run (2 epochs, split 1 fold 1)
+    # - True : full 5-fold CV for split 1 (uses cfg.train.epochs from yaml)
+    RUN_FULL_CV = False
+
     cfg = load_config(Path("configs/default.yaml"))
 
     run_id = make_run_id("dev")
     run_dirs = ensure_run_dirs(Path("artifacts") / "runs" / run_id)
     save_resolved_config(cfg, run_dirs["root"])
 
-    train_df, test_df = load_split_data(cfg, split_id=1)
-    folds = make_fold_indices(cfg, split_id=1, train_df=train_df)
+    split_id = 1
+    train_df, test_df = load_split_data(cfg, split_id=split_id)
+    folds = make_fold_indices(cfg, split_id=split_id, train_df=train_df)
 
     print(f"Run: {run_id}")
+    print(f"Split: {split_id}")
     print(f"Train rows: {len(train_df)} | Test rows: {len(test_df)}")
     print("Fold sizes (train/val rows):")
     for f in folds:
@@ -43,8 +50,8 @@ def main() -> None:
     for i in range(len(ds)):
         _, y, ids = ds[i]
         ids_dataset.append(ids["dataset"])
-        ids_pig.append(ids["pig_id"])
-        ids_bolus.append(ids["bolus"])
+        ids_pig.append(ids["pig"])      # bolus identifier logic
+        ids_bolus.append(ids["bolus"])  # batch
         y_true.append(float(y.item()))
 
     y_true = np.array(y_true, dtype=float)
@@ -60,37 +67,54 @@ def main() -> None:
     )
 
     # ===============================
-    # DEV TRAIN RUN: split 1, fold 1 (2 epochs)
+    # MODE A: Quick dev sanity run
     # ===============================
-    from epacc_mle.models import build_model
-    from epacc_mle.train.loop import train_one_fold
+    if not RUN_FULL_CV:
+        from epacc_mle.models import build_model
+        from epacc_mle.train.loop import train_one_fold
 
-    cfg_dev = replace(
-        cfg,
-        train=replace(cfg.train, epochs=2, print_interval=1, batch_size=64),
-    )
+        cfg_dev = replace(
+            cfg,
+            train=replace(cfg.train, epochs=2, print_interval=1, batch_size=64),
+        )
 
-    split_id = 1
-    fold_id = 1
-    f0 = next(ff for ff in folds if ff.fold_id == fold_id)
+        fold_id = 1
+        f0 = next(ff for ff in folds if ff.fold_id == fold_id)
 
-    train_fold_df = train_df.iloc[f0.train_idx].reset_index(drop=True)
-    val_fold_df = train_df.iloc[f0.val_idx].reset_index(drop=True)
+        train_fold_df = train_df.iloc[f0.train_idx].reset_index(drop=True)
+        val_fold_df = train_df.iloc[f0.val_idx].reset_index(drop=True)
 
-    model = build_model(cfg_dev)
+        model = build_model(cfg_dev)
 
-    hist_df = train_one_fold(
-        cfg=cfg_dev,
-        model=model,
-        train_df=train_fold_df,
-        val_df=val_fold_df,
-        run_dirs=run_dirs,
+        hist_df = train_one_fold(
+            cfg=cfg_dev,
+            model=model,
+            train_df=train_fold_df,
+            val_df=val_fold_df,
+            run_dirs=run_dirs,
+            split_id=split_id,
+            fold_id=fold_id,
+        )
+
+        print("[DEV TRAIN] last epoch summary:")
+        print(hist_df.tail(1).to_string(index=False))
+        return
+
+    # ===============================
+    # MODE B: Full 5-fold CV for this split
+    # ===============================
+    from epacc_mle.train.cv import run_cv_for_split
+
+    summary_df = run_cv_for_split(
+        cfg=cfg,
         split_id=split_id,
-        fold_id=fold_id,
+        train_df=train_df,
+        folds=folds,
+        run_dirs=run_dirs,
     )
 
-    print("[DEV TRAIN] last epoch summary:")
-    print(hist_df.tail(1).to_string(index=False))
+    print("[CV SUMMARY]")
+    print(summary_df.to_string(index=False))
 
 
 if __name__ == "__main__":
