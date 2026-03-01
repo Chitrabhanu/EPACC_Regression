@@ -11,32 +11,53 @@ from epacc_mle.paths import ensure_run_dirs, make_run_id, save_resolved_config
 
 def main() -> None:
     # ===============================
-    # MODE TOGGLES
+    # MODE TOGGLES (set ONE True)
     # ===============================
-    # Set exactly one of these to True at a time.
-    RUN_DEV_SINGLE_FOLD = False          # split 1 fold 1, 2 epochs
-    RUN_FULL_CV_SPLIT1 = False           # split 1, folds 1-5 (uses cfg.train.epochs unless overridden)
-    RUN_HOLDOUT_SINGLE_SPLIT = True      # train on full split-1 train set, evaluate on split-1 test set
-
-    # If you want fast wiring tests, override epochs here (applies to whichever mode you run)
-    FAST_DEBUG = False  # set True to force 2 epochs + smaller batch for quick runs
+    RUN_DEV_SINGLE_FOLD = False           # split 1 fold 1, 2 epochs
+    RUN_FULL_CV_SPLIT1 = False            # split 1, folds 1-5
+    RUN_TRAIN_FULL_SINGLE_SPLIT = False   # train full train split -> checkpoint only
+    RUN_EVAL_HOLDOUT_FROM_CKPT = True     # evaluate holdout using an existing checkpoint
+    RUN_HOLDOUT_SINGLE_SPLIT = False      # train full train split then evaluate holdout (end-to-end)
+    RUN_HOLDOUT_ALL_SPLITS = False        # train+eval for split 1..N using experiments/holdout_runner.py
 
     # ===============================
-    # LOAD CONFIG + INIT RUN DIRS
+    # RUN FOLDER CONTROL (better fix)
+    # ===============================
+    # If you want TRAIN and EVAL to use the SAME run folder, set this to an existing run id.
+    # Example: "dev_20260301_122315"
+    RUN_ID_OVERRIDE = "dev_20260301_122315"
+
+    # ===============================
+    # FAST DEBUG OVERRIDE
+    # ===============================
+    FAST_DEBUG = True
+    FAST_EPOCHS = 5
+    FAST_BATCH_SIZE = 64
+
+    # ===============================
+    # LOAD CONFIG
     # ===============================
     cfg = load_config(Path("configs/default.yaml"))
 
     if FAST_DEBUG:
-        cfg = replace(cfg, train=replace(cfg.train, epochs=2, print_interval=1, batch_size=64))
+        cfg = replace(
+            cfg,
+            train=replace(cfg.train, epochs=FAST_EPOCHS, print_interval=1, batch_size=FAST_BATCH_SIZE),
+        )
 
-    run_id = make_run_id("dev")
+    # ===============================
+    # INIT RUN DIRS (reuse run id if provided)
+    # ===============================
+    run_id = RUN_ID_OVERRIDE or make_run_id("dev")
     run_dirs = ensure_run_dirs(Path("artifacts") / "runs" / run_id)
     save_resolved_config(cfg, run_dirs["root"])
 
     # ===============================
-    # LOAD ONE SPLIT (split 1 for now)
+    # SPLIT ID (for single-split modes)
     # ===============================
     split_id = 1
+
+    # Load data for single split modes
     train_df, test_df = load_split_data(cfg, split_id=split_id)
     folds = make_fold_indices(cfg, split_id=split_id, train_df=train_df)
 
@@ -67,6 +88,7 @@ def main() -> None:
 
     y_true = np.array(y_true, dtype=float)
     y_pred = y_true.copy()
+
     pred_df = make_wavelet_pred_df(ids_dataset, ids_pig, ids_bolus, y_true, y_pred)
     wave_m, bolus_m, bolus_df = compute_wavelet_and_bolus_metrics(pred_df)
 
@@ -77,13 +99,13 @@ def main() -> None:
     )
 
     # ===============================
-    # MODE: DEV SINGLE FOLD
+    # MODE: DEV SINGLE FOLD (2 epochs)
     # ===============================
     if RUN_DEV_SINGLE_FOLD:
         from epacc_mle.models import build_model
         from epacc_mle.train.loop import train_one_fold
 
-        cfg_dev = replace(cfg, train=replace(cfg.train, epochs=2, print_interval=1, batch_size=64))
+        cfg_dev = replace(cfg, train=replace(cfg.train, epochs=2, print_interval=1, batch_size=FAST_BATCH_SIZE))
 
         fold_id = 1
         f0 = next(ff for ff in folds if ff.fold_id == fold_id)
@@ -120,14 +142,51 @@ def main() -> None:
             folds=folds,
             run_dirs=run_dirs,
         )
-
         print("[CV SUMMARY]")
         print(summary_df.to_string(index=False))
         return
 
     # ===============================
-    # MODE: HOLDOUT (single split)
-    # Train on FULL training split, then evaluate on test split
+    # MODE: TRAIN FULL SINGLE SPLIT (checkpoint only)
+    # ===============================
+    if RUN_TRAIN_FULL_SINGLE_SPLIT:
+        from epacc_mle.models import build_model
+        from epacc_mle.train.full_train import train_full_trainset
+
+        model = build_model(cfg)
+        ckpt_path = train_full_trainset(
+            cfg=cfg,
+            model=model,
+            train_df=train_df,
+            run_dirs=run_dirs,
+            split_id=split_id,
+        )
+        print(f"[TRAIN_FULL] saved checkpoint: {ckpt_path}")
+        return
+
+    # ===============================
+    # MODE: EVAL HOLDOUT FROM CHECKPOINT (no training)
+    # ===============================
+    if RUN_EVAL_HOLDOUT_FROM_CKPT:
+        # This now correctly uses the run_id folder you set above (RUN_ID_OVERRIDE),
+        # so it will find the checkpoint created in that run.
+        EVAL_CKPT_PATH = Path(run_dirs["checkpoints"] / f"split_{split_id:02d}_full_train_last.pth")
+
+        from epacc_mle.eval.holdout_from_ckpt import evaluate_holdout_from_checkpoint
+
+        metrics = evaluate_holdout_from_checkpoint(
+            cfg=cfg,
+            ckpt_path=EVAL_CKPT_PATH,
+            split_id=split_id,
+            run_dirs=run_dirs,
+            save_preds=True,
+        )
+        print("[EVAL_FROM_CKPT] metrics:")
+        print(metrics)
+        return
+
+    # ===============================
+    # MODE: HOLDOUT SINGLE SPLIT (train + eval end-to-end)
     # ===============================
     if RUN_HOLDOUT_SINGLE_SPLIT:
         from epacc_mle.models import build_model
@@ -135,6 +194,7 @@ def main() -> None:
         from epacc_mle.eval.holdout import evaluate_holdout_split
 
         model = build_model(cfg)
+
         ckpt_path = train_full_trainset(
             cfg=cfg,
             model=model,
@@ -152,6 +212,15 @@ def main() -> None:
             split_id=split_id,
             save_preds=True,
         )
+        return
+
+    # ===============================
+    # MODE: HOLDOUT ALL SPLITS (train+eval loop)
+    # ===============================
+    if RUN_HOLDOUT_ALL_SPLITS:
+        from epacc_mle.experiments.holdout_runner import run_holdout_all_splits
+
+        _ = run_holdout_all_splits(cfg=cfg, run_dirs=run_dirs, save_preds=False)
         return
 
     print("No mode selected. Set one of the RUN_* toggles to True.")
