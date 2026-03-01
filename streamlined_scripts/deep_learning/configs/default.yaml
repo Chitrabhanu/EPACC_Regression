@@ -11,7 +11,7 @@ data:
 
   # keys/columns
   key_dataset: dataset
-  key_pig: pig
+  key_pig: pig_id
   key_bolus: batch
   target: label
 
