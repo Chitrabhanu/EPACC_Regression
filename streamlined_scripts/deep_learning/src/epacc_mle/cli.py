@@ -13,9 +13,12 @@ def main() -> None:
     # Toggle modes:
     # - False: quick dev sanity run (2 epochs, split 1 fold 1)
     # - True : full 5-fold CV for split 1 (uses cfg.train.epochs from yaml)
-    RUN_FULL_CV = False
+    RUN_FULL_CV = True
 
     cfg = load_config(Path("configs/default.yaml"))
+    
+    #if RUN_FULL_CV:
+    #    cfg = replace(cfg, train=replace(cfg.train, epochs=2, print_interval=1, batch_size=64))
 
     run_id = make_run_id("dev")
     run_dirs = ensure_run_dirs(Path("artifacts") / "runs" / run_id)
