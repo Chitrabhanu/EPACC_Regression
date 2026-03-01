@@ -57,8 +57,10 @@ class WaveletDataset(Dataset):
         self.ids_pig = self.df[pig_col].astype(str).tolist()
         self.ids_bolus = self.df[bolus_col].astype(str).tolist()
 
-        # optional raw pig column if present
-        self.ids_pig_raw = self.df["pig"].astype(str).tolist() if "pig" in self.df.columns else None
+        # raw bolus identifier column used in your original logic
+        if "pig" not in self.df.columns:
+            raise ValueError("Expected column 'pig' to exist (used as bolus identifier in original logic).")
+        self.ids_pig_raw = self.df["pig"].astype(str).tolist()
 
     def __len__(self) -> int:
         return len(self.df)
@@ -67,11 +69,13 @@ class WaveletDataset(Dataset):
         x = torch.from_numpy(self.X[idx]).unsqueeze(0)  # (1, seq_len)
         y = torch.tensor(self.y[idx], dtype=torch.float32)
 
-        ids: Dict[str, str] = {
+            ids: Dict[str, str] = {
             "dataset": self.ids_dataset[idx],
-            "pig_id": self.ids_pig[idx],
-            "bolus": self.ids_bolus[idx],
+            "pig_id": self.ids_pig[idx],     # for fold splitting
+            "pig": self.ids_pig_raw[idx],    # for bolus identity/aggregation
+            "bolus": self.ids_bolus[idx],    # batch
         }
+        return x, y, ids
         if self.ids_pig_raw is not None:
             ids["pig_raw"] = self.ids_pig_raw[idx]
         return x, y, ids
