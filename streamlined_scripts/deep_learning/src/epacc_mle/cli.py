@@ -20,9 +20,50 @@ def main() -> None:
 
     print(f"Run: {run_id}")
     print(f"Train rows: {len(train_df)} | Test rows: {len(test_df)}")
-    print("Fold sizes (train/val rows):")
+
     for f in folds:
-        print(f"  fold {f.fold_id}: {len(f.train_idx)} / {len(f.val_idx)}")
+        print(f"fold {f.fold_id}: {len(f.train_idx)} / {len(f.val_idx)}")
+
+    # ===============================
+    # SMOKE TEST (INSIDE main)
+    # ===============================
+    from epacc_mle.data.dataset import WaveletDataset
+    from epacc_mle.eval.metrics import (
+        make_wavelet_pred_df,
+        compute_wavelet_and_bolus_metrics,
+    )
+    import numpy as np
+
+    ds = WaveletDataset(cfg, train_df.head(200))
+
+    ids_dataset, ids_pig, ids_bolus = [], [], []
+    y_true = []
+
+    for i in range(len(ds)):
+        _, y, ids = ds[i]
+        ids_dataset.append(ids["dataset"])
+        ids_pig.append(ids["pig_id"])
+        ids_bolus.append(ids["bolus"])
+        y_true.append(float(y.item()))
+
+    y_true = np.array(y_true)
+    y_pred = y_true.copy()
+
+    pred_df = make_wavelet_pred_df(
+        ids_dataset,
+        ids_pig,
+        ids_bolus,
+        y_true,
+        y_pred,
+    )
+
+    wave_m, bolus_m, bolus_df = compute_wavelet_and_bolus_metrics(pred_df)
+
+    print(
+        f"[SMOKE] wavelet MAE={wave_m.mae:.6f}, "
+        f"bolus MAE={bolus_m.mae:.6f}, "
+        f"boluses={len(bolus_df)}"
+    )
 
 
 if __name__ == "__main__":
