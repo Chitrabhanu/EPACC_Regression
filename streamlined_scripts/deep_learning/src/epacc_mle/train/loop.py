@@ -117,11 +117,11 @@ def train_one_fold(
             train_ds, batch_size=cfg.train.batch_size, shuffle=False, collate_fn=collate_wavelet_batch
         )
         ytr, ptr, idtr = predict_full(model, train_eval_loader)
-        pred_tr_df = make_wavelet_pred_df(idtr["dataset"], idtr["pig_id"], idtr["bolus"], ytr, ptr)
+        pred_tr_df = make_wavelet_pred_df(idtr["dataset"], idtr["pig"], idtr["bolus"], ytr, ptr)
         tr_wave_m, tr_bolus_m, _ = compute_wavelet_and_bolus_metrics(pred_tr_df)
 
         yva, pva, idva = predict_full(model, val_loader)
-        pred_va_df = make_wavelet_pred_df(idva["dataset"], idva["pig_id"], idva["bolus"], yva, pva)
+        pred_va_df = make_wavelet_pred_df(idva["dataset"], idva["pig"], idva["bolus"], yva, pva)
         va_wave_m, va_bolus_m, _ = compute_wavelet_and_bolus_metrics(pred_va_df)
 
         # ---- val loss ----
