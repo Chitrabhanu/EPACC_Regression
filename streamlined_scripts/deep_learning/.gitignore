@@ -1,7 +1,7 @@
 # Outputs / artifacts
-artifacts/
-Models/
-Results/
+/artifacts/
+/Models/
+/Results/
 *.pth
 *.pt
 *.pkl
