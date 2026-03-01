@@ -1,0 +1,25 @@
+# Outputs / artifacts
+artifacts/
+Models/
+Results/
+*.pth
+*.pt
+*.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+.env
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
