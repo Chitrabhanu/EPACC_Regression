@@ -1,4 +1,4 @@
-# Global experiment defaults (edit later as needed)
+# Global experiment defaults
 project:
   name: epacc_waveforms
   seed: 42
@@ -10,9 +10,12 @@ data:
   fold_pigs_csv: fold_metadata/fold_pigs_SV.csv
 
   # keys/columns
+  # - key_subject: used for CV fold assignment / grouping (must match fold_pigs_SV.csv)
+  # - key_pig + key_bolus: define bolus identity for aggregation
   key_dataset: dataset
-  key_pig: pig_id
-  key_bolus: batch
+  key_subject: pig_id     # for folds
+  key_pig: pig            # for bolus identity
+  key_bolus: batch        # bolus instance within pig
   target: label
 
   # wavelet features
@@ -38,6 +41,7 @@ train:
   print_interval: 25
 
 model:
+  # Keep your existing default name; registry supports this alias.
   name: cnn1d_sebn_reg
   pretrained: false
   pretrained_weights_path: ""
