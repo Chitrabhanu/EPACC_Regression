@@ -1,368 +1,239 @@
-**EPACC Waveform Regression**
+# EPACC Waveform Regression — Technical Reference
 
-**Reproducible Deep Learning Pipeline for Wavelet-Level Training and
-Bolus-Level Evaluation**
+Predicting fluid responsiveness from high-frequency waveform data using deep learning.
 
-------------------------------------------------------------------------
+---
 
-**Overview**
+## Clinical Context
 
-This repository implements a reproducible machine learning pipeline for
-predicting continuous physiological outcomes from high-frequency
-waveform data.
+The goal of this project is **fluid responsiveness prediction**: given a fluid bolus administered during resuscitation, predict whether the patient responds — specifically, whether Stroke Volume increases sufficiently to indicate successful resuscitation.
 
-Physiological bolus waveforms are segmented into fixed-length
-**wavelets** (sequence length = 224). Models are trained at the wavelet
-level while evaluation is performed at both:
+The pipeline predicts continuous Stroke Volume change from arterial pressure waveform recordings in animal studies. Bolus waveforms are segmented into fixed-length **wavelets** (224 samples). Models are trained at the wavelet level while evaluation is reported at both wavelet level and the clinically meaningful **bolus level**.
 
-- **Wavelet level**
+The pipeline supports:
 
-- **Bolus level (clinically meaningful unit)**
+- Deterministic 5-fold cross-validation
+- Split-wise full model training
+- Holdout evaluation from saved checkpoints
+- Multi-split experimental execution with aggregated reporting
 
-The system supports:
+---
 
-- deterministic cross-validation
+## Problem Structure
 
-- split-wise model training
+The dataset has a four-level hierarchy:
 
-- holdout evaluation
+```
+Dataset
+└── Pig
+    └── Bolus
+        └── Wavelets  (224 samples each)
+```
 
-- evaluation from saved checkpoints
+Each wavelet inherits the continuous regression label of its parent bolus. Training at the wavelet level maximises sample efficiency; predictions are aggregated back to bolus level for evaluation.
 
-- multi-split experimental execution
+---
 
-The repository represents a refactored and production-structured version
-of an academic research pipeline used for physiological modeling
-experiments.
+## Evaluation
 
-------------------------------------------------------------------------
+Performance is reported at two levels:
 
-**Problem Structure**
-
-The dataset exhibits hierarchical structure:
-
-Dataset\
-└── Pig\
-└── Bolus\
-└── Wavelets (224 samples)
-
-Key design decision:
-
-- Training occurs at the **wavelet level** to maximize sample
-  efficiency.
-
-- Predictions are aggregated back to **bolus level** for evaluation.
-
-Each wavelet inherits the continuous regression label of its parent
-bolus.
-
-------------------------------------------------------------------------
-
-**Evaluation Philosophy**
-
-Model performance is reported at two levels:
-
-**Wavelet-Level Metrics**
-
-Computed across all wavelets.
-
+### Wavelet-Level Metrics
+Computed across all individual wavelets.
 - Mean Absolute Error (MAE)
-
 - Root Mean Squared Error (RMSE)
 
-**Bolus-Level Metrics (Primary Endpoint)**
+### Bolus-Level Metrics (Primary Endpoint)
+Wavelet predictions are aggregated by `(dataset, pig, batch)` and then evaluated. This represents the clinically interpretable unit — one prediction per administered bolus.
 
-Wavelet predictions are aggregated:
+---
 
-group by (dataset, pig, batch)\
-mean(predictions)
+## Identifier Semantics
 
-Bolus-level metrics represent clinically interpretable performance.
+Correct identifier usage is critical for leakage prevention.
 
-------------------------------------------------------------------------
+| Column | Purpose |
+|---|---|
+| `pig_id` | Cross-validation fold grouping (subject identity) |
+| `pig` | Bolus identifier component |
+| `batch` | Bolus instance component |
+| `dataset` | Dataset namespace |
+| `label` | Continuous regression target (Stroke Volume change) |
 
-**Identifier Semantics**
+CV fold assignment uses `pig_id`; bolus identity is defined as `(pig, batch)`. These are intentionally separate so no subject appears in both train and validation sets.
 
-Correct identifier usage is critical.
+---
 
-| **Column** | **Purpose**                  |
-|------------|------------------------------|
-| pig_id     | Cross-validation grouping    |
-| pig        | Bolus identifier             |
-| batch      | Bolus instance               |
-| dataset    | Dataset namespace            |
-| label      | Continuous regression target |
+## Repository Structure
 
-Cross-validation and evaluation intentionally use different identifiers
-to prevent leakage.
-
-------------------------------------------------------------------------
-
-**Repository Structure**
-
-.\
-├── configs/\
-│ └── default.yaml\
-│\
-├── src/epacc_mle/\
-│ ├── data/ \# data loading and fold construction\
-│ ├── models/ \# model architectures + registry\
-│ ├── train/ \# CV and full-training loops\
-│ ├── eval/ \# holdout evaluation and aggregation\
-│ ├── experiments/ \# multi-split runners\
-│ └── cli.py \# experiment entry point\
-│\
-├── artifacts/ \# experiment outputs (ignored)\
-├── pyproject.toml\
+```
+deep_learning/
+├── configs/
+│   └── default.yaml              # Experiment configuration
+├── data/
+│   └── EPACC/
+│       ├── time_series_splits/
+│       │   ├── train/            # SV_PS_train_*.csv
+│       │   └── test/             # SV_PS_test_*.csv
+│       └── fold_metadata/
+│           └── fold_pigs_SV.csv  # CV fold assignments
+├── src/epacc_mle/
+│   ├── cli.py                    # Experiment entry point
+│   ├── config.py                 # Config dataclass loader
+│   ├── paths.py                  # Run directory management
+│   ├── data/                     # IO, WaveletDataset, folds, collation
+│   ├── models/                   # Architectures + registry
+│   ├── train/                    # CV loop, full training
+│   ├── eval/                     # Holdout evaluation, metrics
+│   ├── experiments/              # Multi-split orchestration
+│   └── viz/                      # Training curve plots
+├── legacy/                       # Earlier implementation (reference only)
+├── artifacts/                    # Experiment outputs (gitignored)
+├── pyproject.toml
 └── README.md
+```
 
-------------------------------------------------------------------------
+---
 
-**Installation**
+## Installation
 
-**Environment**
+```bash
+python -m venv .venv
+source .venv/bin/activate       # Linux/macOS
+# .venv\Scripts\activate        # Windows
 
-python -m venv .venv\
-source .venv/bin/activate \# Linux/macOS\
-\# or\
-.venv\Scripts\activate \# Windows
-
-**Install package**
-
-From repository root:
-
-pip install -U pip\
+pip install -U pip
 pip install -e .
+```
 
-------------------------------------------------------------------------
+---
 
-**Expected Data Layout**
+## Required Data Layout
 
-data/\
-└── EPACC/\
-├── time_series_splits/\
-│ ├── train/\
-│ │ ├── SV_PS_train_1.csv\
-│ │ └── ...\
-│ └── test/\
-│ ├── SV_PS_test_1.csv\
-│ └── ...\
-│\
-└── fold_metadata/\
-└── fold_pigs_SV.csv
+```
+data/EPACC/
+├── time_series_splits/
+│   ├── train/
+│   │   ├── SV_PS_train_1.csv
+│   │   └── ...
+│   └── test/
+│       ├── SV_PS_test_1.csv
+│       └── ...
+└── fold_metadata/
+    └── fold_pigs_SV.csv
+```
 
-------------------------------------------------------------------------
+Each CSV must contain columns: `label`, `dataset`, `pig`, `pig_id`, `batch`, `bit_1` ... `bit_224`.
 
-**Required Dataset Columns**
+---
 
-Each split file must contain:
+## Configuration
 
-- label
+All experiments are configuration-driven. Example `configs/default.yaml`:
 
-- dataset
+```yaml
+data:
+  base_dir: data/EPACC
+  num_splits: 26
+  sequence_length: 224
 
-- pig
+model:
+  name: cnn1d_sebn_reg
 
-- pig_id
+train:
+  epochs: 150
+  batch_size: 16
+  learning_rate: 5e-4
+```
 
-- batch
+Every run stores a resolved configuration snapshot at `artifacts/runs/<run_id>/config_resolved.yaml` for full reproducibility.
 
-- bit_1 ... bit_224
+---
 
-------------------------------------------------------------------------
+## Experiment Modes
 
-**Configuration**
+Experiments are controlled via `cli.py`. Set exactly one mode flag to `True`:
 
-All experiments are configuration-driven.
+### 1. Cross-Validation (Single Split)
+Runs deterministic 5-fold CV on one training split. Use for architecture comparison and hyperparameter validation.
 
-Example (configs/default.yaml):
+Output: `cv/split_01_cv_summary.csv`
 
-data:\
-base_dir: data/EPACC\
-num_splits: 26\
-sequence_length: 224\
-\
-model:\
-name: cnn1d_sebn_reg\
-\
-train:\
-epochs: 150\
-batch_size: 16\
-learning_rate: 5e-4
+### 2. Full Training (Single Split)
+Trains on the entire training split and saves a checkpoint.
 
-Every run stores a resolved configuration snapshot for reproducibility.
+Output: `checkpoints/split_01_full_train_last.pth`
 
-------------------------------------------------------------------------
+### 3. Holdout Evaluation from Checkpoint
+Loads a saved checkpoint and evaluates on the corresponding test split. No retraining required.
 
-**Experiment Outputs**
+### 4. End-to-End Split Experiment
+Runs the full pipeline for a single split: train → checkpoint → holdout evaluation.
 
-All experiments write to:
-
-artifacts/runs/\<run_id\>/
-
-Example:
-
-artifacts/runs/dev_20260301_123000/\
-├── checkpoints/\
-├── curves/\
-├── cv/\
-├── holdout/\
-└── resolved_config.yaml
-
-------------------------------------------------------------------------
-
-**Experiment Modes**
-
-Experiments are controlled via src/epacc_mle/cli.py.
-
-Exactly one execution mode should be enabled at a time.
-
-------------------------------------------------------------------------
-
-**1. Cross-Validation (Single Split)**
-
-Runs deterministic 5-fold CV on a training split.
-
-Purpose:
-
-- architecture comparison
-
-- hyperparameter validation
-
-- stability estimation
-
-Produces:
-
-cv/split_01_cv_summary.csv
-
-**2. Full Training (Single Split)**
-
-Train model on entire training split.
-
-RUN_TRAIN_FULL_SINGLE_SPLIT = True
-
-Produces checkpoint:
-
-checkpoints/split_01_full_train_last.pth
-
-------------------------------------------------------------------------
-
-**3. Holdout Evaluation From Checkpoint**
-
-Evaluation without retraining.
-
-RUN_EVAL_HOLDOUT_FROM_CKPT = True
-
-Loads stored checkpoint and evaluates corresponding test split.
-
-------------------------------------------------------------------------
-
-**4. End-to-End Split Experiment**
-
-RUN_HOLDOUT_SINGLE_SPLIT = True
-
-Pipeline:
-
-train → checkpoint → holdout evaluation
-
-------------------------------------------------------------------------
-
-**5. Multi-Split Experiment (Final Evaluation)**
-
-RUN_HOLDOUT_ALL_SPLITS = True
-
-For each split:
-
-1.  Train on full training split
-
-2.  Evaluate on corresponding holdout set
-
-3.  Aggregate metrics across splits
+### 5. Multi-Split Experiment (Final Evaluation)
+For each split: train, evaluate on holdout, aggregate metrics across all splits.
 
 Outputs:
+```
+holdout_summary.csv
+holdout_overall.json   # mean ± std across splits
+```
 
-holdout_summary.csv\
-holdout_overall.json
+---
 
-Final results are reported as:
+## Experiment Outputs
 
-mean ± standard deviation across splits
+All runs write to `artifacts/runs/<run_id>/`:
 
-------------------------------------------------------------------------
+```
+artifacts/runs/dev_20260301_123000/
+├── config_resolved.yaml
+├── checkpoints/
+├── curves/
+├── cv/
+└── holdout/
+```
 
-**Recommended Experimental Workflow**
+---
 
-**Development**
+## Recommended Workflow
 
-epochs = 2–5\
-single split debugging
+| Phase | Setting |
+|---|---|
+| Development / debugging | `epochs = 2–5`, single split |
+| Model selection | CV on split 1 |
+| Final evaluation | CV → full train → holdout per split, then aggregate |
 
-**Model Selection**
+---
 
-cross-validation on split 1
+## Available Models
 
-**Final Evaluation**
+| Key | Architecture |
+|---|---|
+| `cnn1d_basic` | Baseline 1D CNN |
+| `cnn1d_sebn_reg` | 1D CNN with Squeeze-and-Excitation blocks |
+| `resnet1d` | ResNet-style 1D architecture |
+| `wavenet1d` | WaveNet-inspired dilated convolutions |
+| `transformer1d` | Transformer encoder |
 
-CV per split\
-Full-train per split\
-Holdout testing per split\
-Aggregate results
+---
 
-------------------------------------------------------------------------
+## Reproducibility Guarantees
 
-**Reproducibility Guarantees**
+- Deterministic fold assignment (fixed by `pig_id`)
+- Configuration snapshotting on every run
+- Strict train/test/fold separation
+- Checkpoint-based evaluation (no retraining required)
+- Split isolation prevents cross-split leakage
 
-- deterministic fold assignment
+---
 
-- configuration snapshotting
+## Hardware
 
-- training/evaluation separation
+CUDA is used automatically when available. For CPU debugging, use reduced epochs and a larger batch size.
 
-- checkpoint-based evaluation
+---
 
-- split isolation prevents leakage
+## Author
 
-------------------------------------------------------------------------
-
-**Hardware**
-
-CUDA is automatically used when available.
-
-CPU debugging recommended with reduced epochs and larger batch size.
-
-------------------------------------------------------------------------
-
-**Design Goals**
-
-This repository emphasizes:
-
-- experiment reproducibility
-
-- clear separation of concerns
-
-- scalable experimentation
-
-- healthcare ML evaluation correctness
-
-- research-to-production transition
-
-------------------------------------------------------------------------
-
-**Intended Use**
-
-This repository is structured to demonstrate:
-
-- end-to-end ML experimentation
-
-- model lifecycle management
-
-- evaluation rigor in biomedical ML
-
-- production-aware research engineering practices
-
-------------------------------------------------------------------------
-
-**Author**
-
-Chitrabhanu Gupta\
-Clinical Machine Learning Researcher
+**Chitrabhanu Gupta** — Clinical Machine Learning Researcher
