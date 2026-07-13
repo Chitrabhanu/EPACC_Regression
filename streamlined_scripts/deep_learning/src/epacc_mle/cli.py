@@ -25,7 +25,7 @@ def main() -> None:
     # ===============================
     # If you want TRAIN and EVAL to use the SAME run folder, set this to an existing run id.
     # Example: "dev_20260301_122315"
-    RUN_ID_OVERRIDE = "dev_20260301_122315"
+    RUN_ID_OVERRIDE = None
 
     # ===============================
     # FAST DEBUG OVERRIDE
