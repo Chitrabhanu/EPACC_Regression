@@ -41,7 +41,7 @@ train:
   print_interval: 25
 
 model:
-  # Keep your existing default name; registry supports this alias.
+  
   name: cnn1d_sebn_reg
   pretrained: false
   pretrained_weights_path: ""
