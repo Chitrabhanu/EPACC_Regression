@@ -32,7 +32,7 @@ _MODEL_REGISTRY: Dict[str, Callable[[], nn.Module]] = {
 
 # Aliases (backwards compatibility)
 _ALIASES: Dict[str, str] = {
-    # Keep your current default unchanged:
+    #Default:
     "cnn1d_sebn_reg": "cnn1d_3l_se_bn_reg",
 
     # Optional: match old script names too
