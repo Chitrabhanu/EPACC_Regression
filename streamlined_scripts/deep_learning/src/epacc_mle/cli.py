@@ -13,10 +13,10 @@ def main() -> None:
     # ===============================
     # MODE TOGGLES (set ONE True)
     # ===============================
-    RUN_DEV_SINGLE_FOLD = False           # split 1 fold 1, 2 epochs
+    RUN_DEV_SINGLE_FOLD = True            # split 1 fold 1, 2 epochs
     RUN_FULL_CV_SPLIT1 = False            # split 1, folds 1-5
     RUN_TRAIN_FULL_SINGLE_SPLIT = False   # train full train split -> checkpoint only
-    RUN_EVAL_HOLDOUT_FROM_CKPT = True     # evaluate holdout using an existing checkpoint
+    RUN_EVAL_HOLDOUT_FROM_CKPT = False    # evaluate holdout using an existing checkpoint
     RUN_HOLDOUT_SINGLE_SPLIT = False      # train full train split then evaluate holdout (end-to-end)
     RUN_HOLDOUT_ALL_SPLITS = False        # train+eval for split 1..N using experiments/holdout_runner.py
 
