@@ -96,4 +96,4 @@ python -m epacc_mle.cli
 
 **Chitrabhanu Gupta** — Clinical Machine Learning Researcher
 
-For detailed technical documentation see [`streamlined_scripts/deep_learning/README.md`](streamlined_scripts/deep_learning/README.md).
+For detailed technical documentation see [`streamlined_scripts/deep_learning/README.md`](streamlined_scripts/deep_learning/readme.md).
